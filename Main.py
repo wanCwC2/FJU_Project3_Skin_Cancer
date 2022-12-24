@@ -23,6 +23,13 @@ from keras.applications import Xception,VGG16,ResNet50
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import classification_report
+#from __future__ import print_function
+import keras
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, Flatten
+from keras.layers import Conv2D, MaxPooling2D
+from keras import backend as K
 np.random.seed(408570344)
 
 lesion_type_dict = {
@@ -64,45 +71,43 @@ X_img_normalize = X_img.astype('float32') / 255.0
 x_train, x_val, y_train, y_val = train_test_split(X_img_normalize, y_label, test_size = 0.2)
 
 #CNN
-# Defining base model using Xception module from Keras
-training_shape = (71, 71, 3)
-base_model = Xception(include_top=False,weights='imagenet',input_shape = training_shape)
-for layer in base_model.layers:
-    layer.trainable = True                         # Training all layers from scratch
+# 建立簡單的線性執行的模型
+model = Sequential()
+# 建立卷積層，filter=32,即 output space 的深度, Kernal Size: 3x3, activation function 採用 relu
+model.add(Conv2D(32, kernel_size=(3, 3),
+                 activation='relu',
+                 input_shape=[71, 71, 3]))
+# 建立卷積層，filter=64,即 output size, Kernal Size: 3x3, activation function 採用 relu
+model.add(Conv2D(64, (3, 3), activation='relu'))
+# 建立池化層，池化大小=2x2，取最大值
+model.add(MaxPooling2D(pool_size=(2, 2)))
+# Dropout層隨機斷開輸入神經元，用於防止過度擬合，斷開比例:0.25
+model.add(Dropout(0.25))
+# Flatten層把多維的輸入一維化，常用在從卷積層到全連接層的過渡。
+model.add(Flatten())
+# 全連接層: 128個output
+model.add(Dense(128, activation='relu'))
+# Dropout層隨機斷開輸入神經元，用於防止過度擬合，斷開比例:0.5
+model.add(Dropout(0.5))
+# 使用 softmax activation function，將結果分類
+model.add(Dense(128, activation='softmax'))
 
-#Adding layers at end
-n_classes = 7
-model = base_model.output
-model = Flatten()(model)
-model = Dense(128)(model)
-model = Dropout(0.5)(model)
-model = BatchNormalization()(model)
-model = Activation('relu')(model)
-output = Dense(n_classes, activation='softmax')(model)
-model = Model(inputs=base_model.input, outputs=output)
-
-# Compiling the model
-optimizer = Adam(lr=0.001)
-model.compile(loss='categorical_crossentropy',
-              optimizer=optimizer, 
+# 編譯: 選擇損失函數、優化方法及成效衡量方式
+model.compile(loss=keras.losses.categorical_crossentropy,
+              optimizer=keras.optimizers.Adadelta(),
               metrics=['accuracy'])
 
-# Defining callback Methods
-n_epoch = 30
+# 進行訓練, 訓練過程會存在 train_history 變數中
+train_history = model.fit(x_train, y_train,
+          batch_size=12,
+          epochs=1,
+          verbose=1,
+          validation_data=(x_val, y_val))
 
-early_stop = EarlyStopping(monitor='val_loss', patience=20, verbose=1, 
-                           mode='auto', restore_best_weights=True)
-
-reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, 
-                              verbose=1, mode='auto')
-
-# Fitting the model
-history = model.fit(x_train,
-                    y_train,
-                    epochs=n_epoch,
-                    callbacks=[reduce_lr,early_stop],
-                    validation_data=(x_val,y_val)
-                   )
+# 顯示損失函數、訓練成果(分數)
+score = model.evaluate(x_val, y_val, verbose=0)
+print('Test loss:', score[0])
+print('Test accuracy:', score[1])
 '''
 # Plotting the results on Graph
 fig, ax = plt.subplots(2,1)
