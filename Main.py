@@ -4,6 +4,25 @@ from keras.utils import np_utils
 from sklearn.model_selection import train_test_split
 import os
 from PIL import Image
+import pandas as pd
+import matplotlib.pyplot as plt
+import glob
+from tqdm import tqdm
+import tensorflow as tf
+import keras
+import cv2
+import seaborn as sns
+import random
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import *
+from tensorflow.keras.optimizers import *
+from tensorflow.keras.callbacks import *
+from tensorflow.keras.initializers import *
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from keras.applications import Xception,VGG16,ResNet50
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import classification_report
 np.random.seed(408570344)
 
 lesion_type_dict = {
@@ -42,60 +61,60 @@ X_img_normalize = X_img.astype('float32') / 255.0
 #建立隨機森林的實體
 #model_RF = RandomForestClassifier()
 #分割學習資料集與驗證資料集
-X_train, X_test, y_train, y_test = train_test_split(X_img_normalize, y_label, test_size = 0.2)
-
-# Design your RandomForest model
-# XGBoost
-from xgboost import XGBClassifier
-from xgboost import XGBRegressor
-'''
-params = { 'max_depth': range (2, 15, 3),
-           'learning_rate': [0.01, 0.1, 0.5, 1, 5, 10],
-           'n_estimators': range(80, 500, 50),
-           'colsample_bytree': [0.5, 1, 3, 6, 10],
-#           'min_child_weigh': range(1, 9, 1),
-           'subsample': [0.5, 0.7, 0.9, 1.5, 2]}
-from sklearn.model_selection import GridSearchCV
-model = XGBClassifier()
-clf = GridSearchCV(estimator = model,
-                   param_grid = params,
-                   scoring = 'neg_log_loss')
-clf.fit(X_train, y_train)
-print("Best parameters:", clf.best_params_)
-# Best parameters: {'colsample_bytree': 1, 'learning_rate': 0.01, 'max_depth': 2, 'n_estimators': 380, 'subsample': 0.9}
-print(clf.best_estimator_)
-# XGBClassifier(colsample_bytree=1, learning_rate=0.01, max_depth=2, n_estimators=380, subsample=0.9)
-'''
+x_train, x_val, y_train, y_val = train_test_split(X_img_normalize, y_label, test_size = 0.2)
 
 #CNN
-from keras.models import Sequential
-#from keras.models import Conv2D
-#from keras.layers.convolutional import Conv2D
-import keras
+# Defining base model using Xception module from Keras
+training_shape = (71, 71, 3)
+base_model = Xception(include_top=False,weights='imagenet',input_shape = training_shape)
+for layer in base_model.layers:
+    layer.trainable = True                         # Training all layers from scratch
 
-#model = clf.best_estimator_
-#model = XGBClassifier(colsample_bytree=1, learning_rate=0.01, max_depth=2, n_estimators=380, subsample=0.9)
-#model = XGBClassifier()
-#model = XGBRegressor()
+#Adding layers at end
+n_classes = 7
+model = base_model.output
+model = Flatten()(model)
+model = Dense(128)(model)
+model = Dropout(0.5)(model)
+model = BatchNormalization()(model)
+model = Activation('relu')(model)
+output = Dense(n_classes, activation='softmax')(model)
+model = Model(inputs=base_model.input, outputs=output)
 
-model = Sequential()
-model.add(keras.layers.Conv2D(filters=7, kernel_size=5, strides=1, padding="same", activation="relu",input_shape=[28, 28, 1]))
-model.add(keras.layers.MaxPool2D(pool_size=2))
+# Compiling the model
+optimizer = Adam(lr=0.001)
+model.compile(loss='categorical_crossentropy',
+              optimizer=optimizer, 
+              metrics=['accuracy'])
 
-model.add(keras.layers.Conv2D(filters=7, kernel_size=3, strides=1, padding="same", activation="relu"))
-model.add(keras.layers.MaxPool2D(pool_size=2))
+# Defining callback Methods
+n_epoch = 30
 
-model.add(keras.layers.Flatten())
-model.add(keras.layers.Dense(50, activation="relu"))
-model.add(keras.layers.Dense(50, activation="relu"))
-model.add(keras.layers.Dropout(0.3))
-model.add(keras.layers.Dense(10, activation="softmax"))
+early_stop = EarlyStopping(monitor='val_loss', patience=20, verbose=1, 
+                           mode='auto', restore_best_weights=True)
 
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, 
+                              verbose=1, mode='auto')
 
-model.compile(loss="sparse_categorical_crossentropy", optimizer="sgd", metrics=["accuracy"])
+# Fitting the model
+history = model.fit(x_train,
+                    y_train,
+                    epochs=n_epoch,
+                    callbacks=[reduce_lr,early_stop],
+                    validation_data=(x_val,y_val)
+                   )
+'''
+# Plotting the results on Graph
+fig, ax = plt.subplots(2,1)
+ax[0].plot(history.history['loss'], color='b', label="Training loss")
+ax[0].plot(history.history['val_loss'], color='r', label="validation loss",axes =ax[0])
+legend = ax[0].legend(loc='best', shadow=True)
 
-model.fit(X_train, y_train)
-
+ax[1].plot(history.history['accuracy'], color='b', label="Training accuracy")
+ax[1].plot(history.history['val_accuracy'], color='r',label="Validation accuracy")
+legend = ax[1].legend(loc='best', shadow=True)
+'''
+'''
 from sklearn.metrics import accuracy_score
 y_pred = model.predict(X_test)
 #y_pred = y_pred.round()
@@ -108,3 +127,4 @@ df_submit['Id'] = [f'{i:04d}' for i in range(len(x_test_normalize))]
 df_submit['Label'] = model.predict(x_test_normalize)
 
 df_submit.to_csv('data/predict.csv', index=None)
+'''
